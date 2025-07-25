@@ -2,11 +2,11 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>바코드 & 상품명 생성·스캔기</title>
+  <title>바코드 & 상품명 생성·스캔기 (ZXing)</title>
   <!-- JsBarcode -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-  <!-- QuaggaJS (바코드 스캔 라이브러리) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <!-- ZXing for JS -->
+  <script src="https://unpkg.com/@zxing/library@0.18.6"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     label { font-weight: bold; display: block; margin-top: 10px; }
@@ -26,14 +26,14 @@
   <label for="codeInput">바코드 숫자 입력:</label>
   <input id="codeInput" placeholder="예: 123456789012">
   <button id="generateBtn">생성</button>
+
+  <!-- 하나로 합쳐질 SVG -->
   <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
 
   <hr>
 
   <h1>바코드 스캔기</h1>
-  <div id="scanner-container">
-    <video id="video" autoplay muted playsinline></video>
-  </div>
+  <video id="video" playsinline></video><br>
   <button id="scanBtn">스캔 시작</button>
   <button id="stopBtn" style="display:none;">스캔 중지</button>
 
@@ -42,71 +42,73 @@
     const codeIn    = document.getElementById('codeInput');
     const genBtn    = document.getElementById('generateBtn');
     const svgEl     = document.getElementById('barcodeSvg');
+    const video     = document.getElementById('video');
     const scanBtn   = document.getElementById('scanBtn');
     const stopBtn   = document.getElementById('stopBtn');
 
-    // 1) 바코드+상품명 SVG 생성 함수
+    // 1) 바코드 + 상품명 SVG 생성 함수
     function createBarcode(code) {
+      // SVG 초기화
       while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+      // 바코드 그리기
       JsBarcode(svgEl, code, { format:"CODE128", width:2, height:60, displayValue:false });
-      const name = productIn.value.trim() || '(상품명 없음)';
+      // 상품명 텍스트 추가
       const txt = document.createElementNS(svgEl.namespaceURI, 'text');
-      txt.setAttribute('x','50%');
-      txt.setAttribute('y','75');
-      txt.setAttribute('text-anchor','middle');
-      txt.setAttribute('font-size','14');
-      txt.textContent = name;
+      txt.setAttribute('x', '50%');
+      txt.setAttribute('y', '80');
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('font-size', '14');
+      txt.textContent = productIn.value.trim() || '(상품명 없음)';
       svgEl.appendChild(txt);
-      const bbox = svgEl.getBBox();
-      svgEl.setAttribute('viewBox', `0 0 ${bbox.width} 90`);
+      // viewBox 재설정
+      const bb = svgEl.getBBox();
+      svgEl.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height + 10}`);
     }
 
-    genBtn.addEventListener('click', ()=> {
+    // 2) 생성 버튼
+    genBtn.addEventListener('click', () => {
       const code = codeIn.value.trim() || '000000000000';
       createBarcode(code);
     });
 
-    // 2) QuaggaJS 초기화 & 스캔
-    scanBtn.addEventListener('click', ()=> {
+    // 3) ZXing 코드 리더 초기화
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+
+    // 4) 스캔 시작
+    scanBtn.addEventListener('click', () => {
       scanBtn.style.display = 'none';
       stopBtn.style.display = '';
-      Quagga.init({
-        inputStream: {
-          name: "Live",
-          type: "LiveStream",
-          target: document.querySelector('#scanner-container'),
-          constraints: { facingMode: "environment" }
-        },
-        decoder: { readers: ["code_128_reader","ean_reader","ean_8_reader","upc_reader"] },
-        locate: true
-      }, err => {
-        if (err) {
-          console.error(err);
-          alert('스캐너 초기화에 실패했습니다.');
-          scanBtn.style.display = '';
-          stopBtn.style.display = 'none';
-          return;
-        }
-        Quagga.start();
-      });
 
-      Quagga.onDetected(result => {
-        const code = result.codeResult.code;
-        // 코드 입력창에만 값 채우기
-        codeIn.value = code;
-        // 자동 생성
-        createBarcode(code);
-        Quagga.stop();
-        stopBtn.style.display = 'none';
-        scanBtn.style.display = '';
-      });
+      codeReader
+        .listVideoInputDevices()
+        .then(videoInputDevices => {
+          // 후면 카메라 우선
+          const deviceId = videoInputDevices.find(d => d.label.toLowerCase().includes('back'))?.deviceId
+                         || videoInputDevices[0].deviceId;
+          return codeReader.decodeFromVideoDevice(deviceId, video, (result, err) => {
+            if (result) {
+              const scanned = result.getText();
+              codeIn.value = scanned;     // 코드 입력란에만 채우기
+              createBarcode(scanned);     // 자동 생성
+              stopScanning();
+            }
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          alert('카메라를 찾을 수 없거나 권한이 거부되었습니다.');
+          stopBtn.style.display = 'none';
+          scanBtn.style.display = '';
+        });
     });
 
-    stopBtn.addEventListener('click', ()=> {
-      Quagga.stop();
+    // 5) 스캔 중지
+    function stopScanning() {
+      codeReader.reset();  // ZXing 리더 정지
       stopBtn.style.display = 'none';
       scanBtn.style.display = '';
-    });
+    }
+    stopBtn.addEventListener('click', stopScanning);
   </script>
 </body>
 </html>
