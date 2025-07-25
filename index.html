@@ -2,11 +2,12 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>내 바코드 생성기</title>
+  <title>바코드 생성·스캔기</title>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     input, button { font-size: 1rem; padding: 8px; margin: 5px 0; }
+    #video { width: 100%; max-width: 300px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
@@ -15,16 +16,66 @@
   <input id="codeInput" placeholder="예: 123456789012" /><br>
   <button id="generateBtn">바코드 생성</button>
   <div><svg id="barcode"></svg></div>
+
+  <hr>
+
+  <h1>바코드 스캔기</h1>
+  <video id="video" playsinline></video><br>
+  <button id="scanBtn">스캔 시작</button>
+
   <script>
+    // 바코드 생성기
     const input = document.getElementById('codeInput');
-    const btn   = document.getElementById('generateBtn');
-    const svg   = document.getElementById('barcode');
-    btn.addEventListener('click', () => {
-      const value = input.value.trim() || '000000000000';
-      JsBarcode(svg, value, {
-        format: "CODE128", width: 2, height: 60, displayValue: true
-      });
+    const genBtn = document.getElementById('generateBtn');
+    const svg    = document.getElementById('barcode');
+    genBtn.addEventListener('click', () => {
+      const v = input.value.trim() || '000000000000';
+      JsBarcode(svg, v, { format:"CODE128", width:2, height:60, displayValue:true });
     });
+
+    // 바코드 스캔기
+    const video   = document.getElementById('video');
+    const scanBtn = document.getElementById('scanBtn');
+    let detector, stream;
+
+    scanBtn.addEventListener('click', async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        video.srcObject = stream;
+        await video.play();
+      } catch (e) {
+        alert('카메라 권한을 허용하세요.');
+        return;
+      }
+      if (!('BarcodeDetector' in window)) {
+        alert('이 브라우저는 스캔 기능을 지원하지 않습니다.');
+        return;
+      }
+      detector = new BarcodeDetector({ formats: ['code_128','ean_13','qr_code'] });
+      requestAnimationFrame(scanFrame);
+    });
+
+    async function scanFrame() {
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes.length) {
+          alert('인식된 코드: ' + barcodes[0].rawValue);
+          stopScan();
+        } else {
+          requestAnimationFrame(scanFrame);
+        }
+      } catch (e) {
+        console.error(e);
+        stopScan();
+      }
+    }
+
+    function stopScan() {
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+    }
   </script>
 </body>
 </html>
