@@ -3,36 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <title>바코드 생성·스캔기</title>
-
-  <!-- JsBarcode : 숫자 라벨 포함 출력 -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-
-  <!-- ZXing : 카메라 스캔 -->
-  <script src="https://unpkg.com/@zxing/library@0.18.6"></script>
-
   <style>
-    body { font-family:sans-serif; padding:20px; }
-    label { font-weight:bold; display:block; margin-top:10px; }
-    input,button{
-      font-size:1rem; padding:8px; margin:5px 0;
+    body { font-family: sans-serif; padding: 20px; }
+    label { font-weight: bold; margin-top: 10px; display: block; }
+    input, button { 
+      font-size:1rem; padding:8px; margin:5px 0; 
       width:100%; max-width:300px; box-sizing:border-box;
     }
-    #barcodeSvg{ display:block; margin:20px auto; width:100%; }
-    #video{ width:100%; max-width:300px; border:1px solid #ccc; margin-top:10px; }
-    hr{ margin:30px 0; }
+    #barcodeSvg { display:block; margin:20px auto; width:100%; }
+    #video { width:100%; max-width:300px; border:1px solid #ccc; margin-top:10px; }
+    hr { margin:30px 0; }
   </style>
 </head>
-
 <body>
   <h1>바코드 생성기</h1>
-
   <label for="codeInput">바코드 숫자 입력:</label>
   <input id="codeInput" placeholder="예: 123456789012">
   <button id="generateBtn">생성</button>
-
-  <!-- 바코드 + 숫자 라벨 -->
   <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-
   <hr>
 
   <h1>바코드 스캔기</h1>
@@ -41,74 +30,94 @@
   <button id="stopBtn" style="display:none;">스캔 중지</button>
 
   <script>
-    /* ---------- 공통: 바코드 생성 ---------- */
+    // — 바코드 그리기 함수
     const codeIn  = document.getElementById('codeInput');
     const genBtn  = document.getElementById('generateBtn');
     const svgEl   = document.getElementById('barcodeSvg');
 
-    function drawBarcode(code){
-      // SVG 비우기
-      while(svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
-
-      // JsBarcode: 숫자 라벨(displayValue:true)
+    function drawBarcode(code) {
+      // 초기화
+      while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+      // 바코드 생성 + 숫자 라벨
       JsBarcode(svgEl, code, {
-        format:"CODE128",
-        width:2,
-        height:60,
-        displayValue:true,
-        fontSize:14,
-        textMargin:5
+        format: "CODE128",
+        width: 2,
+        height: 60,
+        displayValue: true,
+        fontSize: 14,
+        textMargin: 5
       });
-
-      // 뷰박스 재조정
       const bb = svgEl.getBBox();
-      svgEl.setAttribute('viewBox',`0 0 ${bb.width} ${bb.height}`);
+      svgEl.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height}`);
     }
 
-    genBtn.addEventListener('click', ()=>{
-      const c = codeIn.value.trim() || '000000000000';
-      drawBarcode(c);
+    genBtn.addEventListener('click', () => {
+      const code = codeIn.value.trim() || '000000000000';
+      drawBarcode(code);
     });
 
-    /* ---------- 스캔 파트 ---------- */
-    const video  = document.getElementById('video');
-    const scanBtn= document.getElementById('scanBtn');
-    const stopBtn= document.getElementById('stopBtn');
-    const reader = new ZXing.BrowserMultiFormatReader();
+    // — 스캔 (BarcodeDetector API)
+    const video   = document.getElementById('video');
+    const scanBtn = document.getElementById('scanBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    let stream, detector;
 
-    scanBtn.addEventListener('click', async ()=>{
-      scanBtn.style.display='none';
-      stopBtn.style.display='';
+    scanBtn.addEventListener('click', async () => {
+      scanBtn.style.display = 'none';
+      stopBtn.style.display = '';
 
-      try{
-        // 후면 카메라 우선 선택
-        const devices = await reader.listVideoInputDevices();
-        const backCam = devices.find(d=>/back|rear/i.test(d.label)) || devices[0];
-
-        await reader.decodeFromVideoDevice(
-          backCam.deviceId,
-          video,
-          (result,err)=>{
-            if(result){
-              const code = result.getText();
-              codeIn.value = code;   // 입력란 갱신
-              drawBarcode(code);     // 즉시 출력
-              stopScan();            // 자동 정지
-            }
-          }
-        );
-      }catch(e){
-        alert('카메라 초기화 실패: '+e);
-        stopScan();
+      // 1) 카메라 권한 & 스트림
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+      } catch {
+        alert('카메라 권한을 허용해주세요.');
+        resetScanButtons();
+        return;
       }
+      video.srcObject = stream;
+      await video.play();
+
+      // 2) 브라우저 지원 확인
+      if (!('BarcodeDetector' in window)) {
+        alert('이 브라우저는 스캔 기능을 지원하지 않습니다.');
+        resetScanButtons();
+        return;
+      }
+      detector = new BarcodeDetector({ formats: ['code_128','ean_13','ean_8','upc_a','upc_e'] });
+
+      // 3) 프레임마다 스캔
+      requestAnimationFrame(scanFrame);
     });
 
-    function stopScan(){
-      reader.reset();
-      stopBtn.style.display='none';
-      scanBtn.style.display='';
+    async function scanFrame() {
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes.length) {
+          const code = barcodes[0].rawValue;
+          codeIn.value = code;    // 입력란에 채우기
+          drawBarcode(code);      // 바로 생성
+          stopScanning();
+        } else {
+          requestAnimationFrame(scanFrame);
+        }
+      } catch (e) {
+        console.error(e);
+        stopScanning();
+      }
     }
-    stopBtn.addEventListener('click',stopScan);
+
+    function stopScanning() {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      resetScanButtons();
+    }
+
+    function resetScanButtons() {
+      scanBtn.style.display = '';
+      stopBtn.style.display = 'none';
+    }
+    stopBtn.addEventListener('click', stopScanning);
   </script>
 </body>
 </html>
