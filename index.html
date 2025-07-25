@@ -2,102 +2,111 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>바코드 생성·스캔기</title>
+  <title>바코드 & 상품명 생성·스캔기</title>
+  <!-- JsBarcode -->
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <!-- QuaggaJS (바코드 스캔 라이브러리) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; }
-    input, button { font-size: 1rem; padding: 8px; margin: 5px 0; }
-    #video { width: 100%; max-width: 300px; border: 1px solid #ccc; }
-    #productName { text-align: center; margin-top: 8px; font-weight: bold; font-size: 1.1rem; }
+    label { font-weight: bold; display: block; margin-top: 10px; }
+    input, button {
+      font-size: 1rem; padding: 8px; margin: 5px 0;
+      width: 100%; max-width: 300px; box-sizing: border-box;
+    }
+    #barcodeSvg { display: block; margin: 20px auto; }
+    #video { width: 100%; max-width: 300px; border: 1px solid #ccc; margin-top: 10px; }
+    hr { margin: 30px 0; }
   </style>
 </head>
 <body>
   <h1>바코드 생성기</h1>
-  <label>숫자 입력code128 :</label><br>
-  <input id="codeInput" placeholder="예: 123456789012" /><br>
-  <button id="generateBtn">바코드 생성</button>
-  <div><svg id="barcode"></svg></div>
-  <div id="productName"></div>
+  <label for="productInput">상품명 입력:</label>
+  <input id="productInput" placeholder="예: 사과쥬스">
+  <label for="codeInput">바코드 숫자 입력:</label>
+  <input id="codeInput" placeholder="예: 123456789012">
+  <button id="generateBtn">생성</button>
+  <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
 
   <hr>
 
   <h1>바코드 스캔기</h1>
-  <video id="video" playsinline></video><br>
+  <div id="scanner-container">
+    <video id="video" autoplay muted playsinline></video>
+  </div>
   <button id="scanBtn">스캔 시작</button>
+  <button id="stopBtn" style="display:none;">스캔 중지</button>
 
   <script>
-    // — 요소 참조
-    const input       = document.getElementById('codeInput');
-    const genBtn      = document.getElementById('generateBtn');
-    const svg         = document.getElementById('barcode');
-    const nameDisplay = document.getElementById('productName');
+    const productIn = document.getElementById('productInput');
+    const codeIn    = document.getElementById('codeInput');
+    const genBtn    = document.getElementById('generateBtn');
+    const svgEl     = document.getElementById('barcodeSvg');
+    const scanBtn   = document.getElementById('scanBtn');
+    const stopBtn   = document.getElementById('stopBtn');
 
-    // — 바코드 생성 함수
-    function createBarcode(value) {
-      JsBarcode(svg, value, { format:"CODE128", width:2, height:60, displayValue:true });
-      nameDisplay.innerText = value || '(상품명 없음)';
+    // 1) 바코드+상품명 SVG 생성 함수
+    function createBarcode(code) {
+      while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+      JsBarcode(svgEl, code, { format:"CODE128", width:2, height:60, displayValue:false });
+      const name = productIn.value.trim() || '(상품명 없음)';
+      const txt = document.createElementNS(svgEl.namespaceURI, 'text');
+      txt.setAttribute('x','50%');
+      txt.setAttribute('y','75');
+      txt.setAttribute('text-anchor','middle');
+      txt.setAttribute('font-size','14');
+      txt.textContent = name;
+      svgEl.appendChild(txt);
+      const bbox = svgEl.getBBox();
+      svgEl.setAttribute('viewBox', `0 0 ${bbox.width} 90`);
     }
 
-    // — 생성 버튼 클릭
-    genBtn.addEventListener('click', () => {
-      const v = input.value.trim() || '000000000000';
-      createBarcode(v);
+    genBtn.addEventListener('click', ()=> {
+      const code = codeIn.value.trim() || '000000000000';
+      createBarcode(code);
     });
 
-    // — 스캔 관련
-    const video   = document.getElementById('video');
-    const scanBtn = document.getElementById('scanBtn');
-    let detector, stream;
-
-    scanBtn.addEventListener('click', async () => {
-      // 카메라 권한 & 재생
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        });
-        video.srcObject = stream;
-        await video.play();
-      } catch (e) {
-        alert('카메라 권한을 허용하세요.');
-        return;
-      }
-
-      // BarcodeDetector 지원 확인
-      if (!('BarcodeDetector' in window)) {
-        alert('이 브라우저는 스캔 기능을 지원하지 않습니다.');
-        return;
-      }
-      detector = new BarcodeDetector({
-        formats: ['code_128','ean_13','qr_code']
+    // 2) QuaggaJS 초기화 & 스캔
+    scanBtn.addEventListener('click', ()=> {
+      scanBtn.style.display = 'none';
+      stopBtn.style.display = '';
+      Quagga.init({
+        inputStream: {
+          name: "Live",
+          type: "LiveStream",
+          target: document.querySelector('#scanner-container'),
+          constraints: { facingMode: "environment" }
+        },
+        decoder: { readers: ["code_128_reader","ean_reader","ean_8_reader","upc_reader"] },
+        locate: true
+      }, err => {
+        if (err) {
+          console.error(err);
+          alert('스캐너 초기화에 실패했습니다.');
+          scanBtn.style.display = '';
+          stopBtn.style.display = 'none';
+          return;
+        }
+        Quagga.start();
       });
 
-      // 스캔 루프 시작
-      requestAnimationFrame(scanFrame);
+      Quagga.onDetected(result => {
+        const code = result.codeResult.code;
+        // 코드 입력창에만 값 채우기
+        codeIn.value = code;
+        // 자동 생성
+        createBarcode(code);
+        Quagga.stop();
+        stopBtn.style.display = 'none';
+        scanBtn.style.display = '';
+      });
     });
 
-    async function scanFrame() {
-      try {
-        const codes = await detector.detect(video);
-        if (codes.length) {
-          // 첫 번째 코드 사용
-          const scanned = codes[0].rawValue;
-          // 입력창에 쓰고, 바로 생성
-          input.value = scanned;
-          createBarcode(scanned);
-          stopScan();
-        } else {
-          requestAnimationFrame(scanFrame);
-        }
-      } catch (e) {
-        console.error(e);
-        stopScan();
-      }
-    }
-
-    function stopScan() {
-      if (stream) stream.getTracks().forEach(t => t.stop());
-      stream = null;
-    }
+    stopBtn.addEventListener('click', ()=> {
+      Quagga.stop();
+      stopBtn.style.display = 'none';
+      scanBtn.style.display = '';
+    });
   </script>
 </body>
 </html>
