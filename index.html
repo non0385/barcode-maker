@@ -56,10 +56,10 @@
 
       const name = productIn.value.trim();
       const fontSize = 14;
-      const marginBetween = 10;
+      const marginBetween = fontSize; // 숫자 높이만큼 간격
       const svgNS = 'http://www.w3.org/2000/svg';
 
-      // 1) 바코드 그룹 생성 및 렌더링 임시
+      // 바코드 그룹 생성 및 렌더링
       const barcodeGroup = document.createElementNS(svgNS, 'g');
       JsBarcode(barcodeGroup, code, {
         format: 'CODE128',
@@ -69,16 +69,16 @@
         fontSize: fontSize,
         textMargin: 5
       });
-      svgEl.appendChild(barcodeGroup);
-      const bbBarcode = barcodeGroup.getBBox();
-      svgEl.removeChild(barcodeGroup);
 
-      // 2) 상품명이 있으면 바코드 y-offset 적용
+      // 측정
+      const bbBarcode = barcodeGroup.getBBox();
+
+      // 오프셋 적용
       const yOffset = name ? fontSize + marginBetween : 0;
       barcodeGroup.setAttribute('transform', `translate(0,${yOffset})`);
       svgEl.appendChild(barcodeGroup);
 
-      // 3) 상품명 텍스트 추가
+      // 상품명 추가
       if (name) {
         const textEl = document.createElementNS(svgNS, 'text');
         textEl.textContent = name;
@@ -90,7 +90,7 @@
         svgEl.appendChild(textEl);
       }
 
-      // 4) 뷰박스 업데이트
+      // 뷰박스 업데이트
       const overall = svgEl.getBBox();
       svgEl.setAttribute('viewBox', `0 0 ${overall.width} ${overall.height}`);
     }
