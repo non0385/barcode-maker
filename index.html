@@ -50,104 +50,105 @@ const stopBtn = document.getElementById('stopBtn');
 const scanOut = document.getElementById('scanOutput');
 let stream, detector;
 
-/* 크기(80 %) */
+/* 크기 (80 %) */
 const SCALE = 0.8;
-const BAR_W = 2 * SCALE;               // 1.6 px
-const BAR_H = 60 * SCALE;              // 48 px
-const FONT  = Math.round(14 * SCALE);  // 11 px
-const GAP   = 8;
+const BAR_W = 2   * SCALE;       // 1.6 px
+const BAR_H = 60  * SCALE;       // 48 px
+const FONT  = Math.round(14*SCALE); // 11 px
+const GAP   = 8;                 // 상품명-바코드 간
 
+/* 바코드 + 상품명 렌더 */
 function draw(code){
   svgEl.innerHTML='';
   const name = prodIn.value.trim();
   const NS   = 'http://www.w3.org/2000/svg';
 
-  /* 상품명 치수 */
-  let txtW=0, txtH=0;
+  /* 1. 바코드 폭 실측 */
+  const tmp = document.createElementNS(NS,'g');
+  JsBarcode(tmp, code, {format:'CODE128', width:BAR_W, height:BAR_H,
+                        displayValue:true, fontSize:FONT, textMargin:5});
+  svgEl.appendChild(tmp);
+  const bbBar = tmp.getBBox(); svgEl.removeChild(tmp);
+
+  /* 2. 텍스트 폭 측정 */
+  let txtW = 0;
   if(name){
-    const t=document.createElementNS(NS,'text');
-    t.textContent=name;
+    const t = document.createElementNS(NS,'text');
+    t.textContent = name;
     t.setAttribute('font-size',FONT);
     t.setAttribute('font-family','sans-serif');
     svgEl.appendChild(t);
-    const bb=t.getBBox(); txtW=bb.width; txtH=bb.height;
+    txtW = t.getBBox().width;
     svgEl.removeChild(t);
   }
 
-  /* 바코드 치수 */
-  const gTmp=document.createElementNS(NS,'g');
-  JsBarcode(gTmp,code,{format:'CODE128',width:BAR_W,height:BAR_H,
-                       displayValue:true,fontSize:FONT,textMargin:5});
-  svgEl.appendChild(gTmp);
-  const bbBar=gTmp.getBBox(); svgEl.removeChild(gTmp);
-
-  const width = Math.max(txtW, bbBar.width);
-  const yOff  = name ? (txtH + GAP) : 0;
-  const height= bbBar.height + yOff;
+  /* 3. 뷰박스 */
+  const width  = Math.max(txtW, bbBar.width);
+  const yOff   = name ? (FONT + GAP) : 0;        // 바코드 y 시작
+  const height = bbBar.height + yOff;
   svgEl.setAttribute('viewBox',`0 0 ${width} ${height}`);
 
-  /* 상품명 */
+  /* 4. 상품명 (위) */
   if(name){
-    const txt=document.createElementNS(NS,'text');
-    txt.textContent=name;
-    txt.setAttribute('x',width/2);
-    txt.setAttribute('y',txtH);
+    const txt = document.createElementNS(NS,'text');
+    txt.textContent = name;
+    txt.setAttribute('x', width/2);
+    txt.setAttribute('y', FONT);                 // 상단에서 FONT px
     txt.setAttribute('text-anchor','middle');
-    txt.setAttribute('dominant-baseline','hanging');
+    txt.setAttribute('dominant-baseline','middle');
     txt.setAttribute('font-size',FONT);
     txt.setAttribute('font-family','sans-serif');
     svgEl.appendChild(txt);
   }
 
-  /* 바코드 */
-  const g=document.createElementNS(NS,'g');
-  g.setAttribute('transform',`translate(${(width-bbBar.width)/2},${yOff})`);
-  JsBarcode(g,code,{format:'CODE128',width:BAR_W,height:BAR_H,
-                    displayValue:true,fontSize:FONT,textMargin:5});
+  /* 5. 바코드 (아래) */
+  const g = document.createElementNS(NS,'g');
+  g.setAttribute('transform', `translate(${(width-bbBar.width)/2},${yOff})`);
+  JsBarcode(g, code, {format:'CODE128', width:BAR_W, height:BAR_H,
+                      displayValue:true, fontSize:FONT, textMargin:5});
   svgEl.appendChild(g);
 }
 
 /* 입력 즉시 렌더 */
-const refresh = () => draw(codeIn.value.trim() || '000000000000');
+const refresh = () => draw(codeIn.value.trim()||'000000000000');
 codeIn.addEventListener('input', refresh);
 prodIn.addEventListener('input', refresh);
 refresh();
 
-/* 다운로드 */
-dlBtn.addEventListener('click',()=>{
-  const src = new XMLSerializer().serializeToString(svgEl);
-  const blob= new Blob([src],{type:'image/svg+xml'});
-  const url = URL.createObjectURL(blob);
-  const a   = document.createElement('a');
-  a.href=url; a.download=(codeIn.value.trim()||'barcode')+'.svg';
+/* SVG 다운로드 */
+dlBtn.addEventListener('click', ()=>{
+  const src  = new XMLSerializer().serializeToString(svgEl);
+  const blob = new Blob([src], {type:'image/svg+xml'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = (codeIn.value.trim()||'barcode')+'.svg';
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
 });
 
 /* 스캔 */
-scanBtn.addEventListener('click',async()=>{
+scanBtn.addEventListener('click', async ()=>{
   scanBtn.style.display='none'; stopBtn.style.display='';
   try{
     stream = await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}
+      video:{facingMode:'environment', width:{ideal:1280}, height:{ideal:720}}
     });
-  }catch{alert('카메라 권한 허용 필요'); resetScan(); return;}
-  video.srcObject=stream; await video.play();
-  if(!('BarcodeDetector'in window)){alert('스캔 미지원'); resetScan(); return;}
-  detector=new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e']});
+  }catch{ alert('카메라 권한 허용 필요'); reset(); return; }
+  video.srcObject = stream; await video.play();
+  if(!('BarcodeDetector'in window)){ alert('스캔 미지원'); reset(); return; }
+  detector = new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e']});
   requestAnimationFrame(scanFrame);
 });
 async function scanFrame(){
   try{
-    const r=await detector.detect(video);
-    if(r.length){const v=r[0].rawValue;
-      codeIn.value=scanOut.value=v; refresh(); stop();}
+    const r = await detector.detect(video);
+    if(r.length){ const v = r[0].rawValue; codeIn.value=scanOut.value=v; refresh(); stop(); }
     else requestAnimationFrame(scanFrame);
-  }catch(e){console.error(e); stop();}
+  }catch(e){ console.error(e); stop(); }
 }
-function stop(){if(stream)stream.getTracks().forEach(t=>t.stop()); resetScan();}
-function resetScan(){scanBtn.style.display=''; stopBtn.style.display='none';}
-stopBtn.addEventListener('click',stop);
+function stop(){ if(stream) stream.getTracks().forEach(t=>t.stop()); reset(); }
+function reset(){ scanBtn.style.display=''; stopBtn.style.display='none'; }
+stopBtn.addEventListener('click', stop);
 </script>
 </body>
 </html>
