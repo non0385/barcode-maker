@@ -35,10 +35,20 @@
   <button id="scanBtn">스캔 시작</button>
   <button id="stopBtn" style="display:none;">스캔 중지</button>
 
+  <!-- ↓ 여기부터 추가: 스캔 결과 표시용 입력칸 -->
+  <label for="scanOutput">스캔 결과:</label>
+  <input id="scanOutput" placeholder="여기에 코드가 표시됩니다" readonly>
+  <!-- ↑ 여기까지 추가 -->
+
   <script>
-    const codeIn  = document.getElementById('codeInput');
-    const genBtn  = document.getElementById('generateBtn');
-    const svgEl   = document.getElementById('barcodeSvg');
+    const codeIn     = document.getElementById('codeInput');
+    const genBtn     = document.getElementById('generateBtn');
+    const svgEl      = document.getElementById('barcodeSvg');
+    const video      = document.getElementById('video');
+    const scanBtn    = document.getElementById('scanBtn');
+    const stopBtn    = document.getElementById('stopBtn');
+    const scanOutput = document.getElementById('scanOutput');  // ← 여기 추가
+    let stream, detector;
 
     function drawBarcode(code) {
       while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
@@ -54,24 +64,17 @@
       svgEl.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height}`);
     }
 
-    // 1) 버튼 클릭 시에도 그대로 동작
+    // 생성 버튼 & 입력 시 자동 갱신
     genBtn.addEventListener('click', () => {
       const code = codeIn.value.trim() || '000000000000';
       drawBarcode(code);
     });
-
-    // 2) 입력할 때마다 자동 생성
     codeIn.addEventListener('input', () => {
       const code = codeIn.value.trim() || '000000000000';
       drawBarcode(code);
     });
 
-    // 스캔 로직 (변경 없음)
-    const video   = document.getElementById('video');
-    const scanBtn = document.getElementById('scanBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    let stream, detector;
-
+    // 스캔 시작
     scanBtn.addEventListener('click', async () => {
       scanBtn.style.display = 'none';
       stopBtn.style.display = '';
@@ -100,12 +103,14 @@
       requestAnimationFrame(scanFrame);
     });
 
+    // 프레임마다 스캔
     async function scanFrame() {
       try {
         const barcodes = await detector.detect(video);
         if (barcodes.length) {
           const code = barcodes[0].rawValue;
-          codeIn.value = code;
+          codeIn.value     = code;
+          scanOutput.value = code;   // ← 여기 추가: 스캔 결과 입력칸에 값 채우기
           drawBarcode(code);
           stopScanning();
         } else {
