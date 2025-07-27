@@ -6,39 +6,42 @@
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; }
-    label { font-weight: bold; margin-top: 10px; display: block; }
-    input, button { 
-      font-size:1rem; padding:8px; margin:5px 0; 
-      width:100%; max-width:300px; box-sizing:border-box;
+    label { font-weight: bold; margin-top: 10px; display: block; text-align: center; }
+    input, button {
+      font-size: 1rem;
+      padding: 8px;
+      display: block;
+      margin: 8px auto;
+      width: 100%;
+      max-width: 300px;
+      box-sizing: border-box;
+      text-align: center;
     }
-    #barcodeSvg { display:block; margin:20px auto; width:100%; }
-    #video { width:100%; max-width:300px; border:1px solid #ccc; margin-top:10px; }
-    hr { margin:30px 0; }
+    #barcodeSvg { display: block; margin: 20px auto; width: 100%; }
+    #video { width: 100%; max-width: 300px; border: 1px solid #ccc; margin: 10px auto; }
+    hr { margin: 30px 0; }
   </style>
 </head>
 <body>
-  <h1>바코드 생성기</h1>
+  <h1 style="text-align:center">바코드 생성기</h1>
   <label for="codeInput">바코드 숫자 입력:</label>
   <input id="codeInput" placeholder="예: 123456789012">
   <button id="generateBtn">생성</button>
   <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
   <hr>
 
-  <h1>바코드 스캔기</h1>
-  <video id="video" playsinline></video><br>
+  <h1 style="text-align:center">바코드 스캔기</h1>
+  <video id="video" playsinline></video>
   <button id="scanBtn">스캔 시작</button>
   <button id="stopBtn" style="display:none;">스캔 중지</button>
 
   <script>
-    // — 바코드 그리기 함수
     const codeIn  = document.getElementById('codeInput');
     const genBtn  = document.getElementById('generateBtn');
     const svgEl   = document.getElementById('barcodeSvg');
 
     function drawBarcode(code) {
-      // 초기화
       while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
-      // 바코드 생성 + 숫자 라벨
       JsBarcode(svgEl, code, {
         format: "CODE128",
         width: 2,
@@ -51,12 +54,19 @@
       svgEl.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height}`);
     }
 
+    // 1) 버튼 클릭 시에도 그대로 동작
     genBtn.addEventListener('click', () => {
       const code = codeIn.value.trim() || '000000000000';
       drawBarcode(code);
     });
 
-    // — 스캔 (BarcodeDetector API)
+    // 2) 입력할 때마다 자동 생성
+    codeIn.addEventListener('input', () => {
+      const code = codeIn.value.trim() || '000000000000';
+      drawBarcode(code);
+    });
+
+    // 스캔 로직 (변경 없음)
     const video   = document.getElementById('video');
     const scanBtn = document.getElementById('scanBtn');
     const stopBtn = document.getElementById('stopBtn');
@@ -66,7 +76,6 @@
       scanBtn.style.display = 'none';
       stopBtn.style.display = '';
 
-      // 1) 카메라 권한 & 스트림
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
@@ -79,15 +88,15 @@
       video.srcObject = stream;
       await video.play();
 
-      // 2) 브라우저 지원 확인
       if (!('BarcodeDetector' in window)) {
         alert('이 브라우저는 스캔 기능을 지원하지 않습니다.');
         resetScanButtons();
         return;
       }
-      detector = new BarcodeDetector({ formats: ['code_128','ean_13','ean_8','upc_a','upc_e'] });
+      detector = new BarcodeDetector({
+        formats: ['code_128','ean_13','ean_8','upc_a','upc_e']
+      });
 
-      // 3) 프레임마다 스캔
       requestAnimationFrame(scanFrame);
     });
 
@@ -96,8 +105,8 @@
         const barcodes = await detector.detect(video);
         if (barcodes.length) {
           const code = barcodes[0].rawValue;
-          codeIn.value = code;    // 입력란에 채우기
-          drawBarcode(code);      // 바로 생성
+          codeIn.value = code;
+          drawBarcode(code);
           stopScanning();
         } else {
           requestAnimationFrame(scanFrame);
