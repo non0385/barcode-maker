@@ -16,7 +16,7 @@
 </head>
 <body>
 <h1 style="text-align:center">
-  바코드 생성기 <span style="font-size:0.7em;font-weight:normal;">(v0.8.1)</span>
+  바코드 생성기 <span style="font-size:0.7em;font-weight:normal;">(v0.8.2)</span>
 </h1>
 
 <!-- 입력 순서: 숫자 → 상품명 -->
@@ -55,7 +55,7 @@ const SCALE = 0.8;
 const BAR_W = 2 * SCALE;               // 1.6 px
 const BAR_H = 60 * SCALE;              // 48 px
 const FONT  = Math.round(14 * SCALE);  // 11 px
-const GAP   = 4;                       // 바코드 숫자와 상품명 사이
+const GAP   = 2;                       // 바코드 숫자와 상품명 사이
 
 /* 바코드 + 상품명(아래) 렌더 */
 function draw(code){
