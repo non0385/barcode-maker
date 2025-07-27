@@ -26,6 +26,7 @@
   </style>
 </head>
 <body>
+  <!-- 바코드 생성기 영역 -->
   <h1 style="text-align:center">바코드 생성기</h1>
   <label for="productName">상품명 입력:</label>
   <input id="productName" placeholder="예: 사과">
@@ -33,7 +34,7 @@
   <input id="codeInput" placeholder="예: 123456789012">
   <button id="downloadBtn">바코드 저장</button>
   <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-  <hr>  <h1 style="text-align:center">바코드 스캔기</h1>
+  <hr>  <!-- 바코드 스캔기 영역 -->  <h1 style="text-align:center">바코드 스캔기</h1>
   <video id="video" playsinline></video>
   <button id="scanBtn">스캔 시작</button>
   <button id="stopBtn" style="display:none;">스캔 중지</button>
@@ -54,19 +55,12 @@
       while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
 
       const name = productIn.value.trim();
-      // 숫자 텍스트 높이(폰트 사이즈)
       const fontSize = 14;
-      // numericHeight 만큼 간격 확보 (상품명-바코드 간)
-      const numericHeight = fontSize;
-      // 바코드 그룹 y-offset
-      const yOffset = name ? numericHeight * 2 : 0;
+      const marginBetween = 10;
+      const svgNS = 'http://www.w3.org/2000/svg';
 
-      // 바코드 그룹 생성 및 오프셋 적용
-      const barcodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      barcodeGroup.setAttribute('transform', `translate(0,${yOffset})`);
-      svgEl.appendChild(barcodeGroup);
-
-      // 바코드 생성
+      // 1) 바코드 그룹 생성 및 렌더링 임시
+      const barcodeGroup = document.createElementNS(svgNS, 'g');
       JsBarcode(barcodeGroup, code, {
         format: 'CODE128',
         width: 2,
@@ -75,15 +69,20 @@
         fontSize: fontSize,
         textMargin: 5
       });
+      svgEl.appendChild(barcodeGroup);
+      const bbBarcode = barcodeGroup.getBBox();
+      svgEl.removeChild(barcodeGroup);
 
-      // 그룹 바운딩 박스 측정
-      const bb = barcodeGroup.getBBox();
+      // 2) 상품명이 있으면 바코드 y-offset 적용
+      const yOffset = name ? fontSize + marginBetween : 0;
+      barcodeGroup.setAttribute('transform', `translate(0,${yOffset})`);
+      svgEl.appendChild(barcodeGroup);
 
-      // 상품명 추가
+      // 3) 상품명 텍스트 추가
       if (name) {
-        const textEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        const textEl = document.createElementNS(svgNS, 'text');
         textEl.textContent = name;
-        textEl.setAttribute('x', bb.width / 2);
+        textEl.setAttribute('x', bbBarcode.width / 2);
         textEl.setAttribute('y', fontSize);
         textEl.setAttribute('text-anchor', 'middle');
         textEl.setAttribute('font-size', fontSize);
@@ -91,34 +90,34 @@
         svgEl.appendChild(textEl);
       }
 
-      // 전체 바운딩 박스로 뷰박스 조정
+      // 4) 뷰박스 업데이트
       const overall = svgEl.getBBox();
       svgEl.setAttribute('viewBox', `0 0 ${overall.width} ${overall.height}`);
     }
 
-    // 자동 생성
+    // 입력 시 자동 생성
     codeIn.addEventListener('input', () => {
       const code = codeIn.value.trim() || '000000000000';
       drawBarcode(code);
     });
 
-    // 다운로드 버튼
+    // 다운로드 버튼 클릭
     downloadBtn.addEventListener('click', () => {
       const serializer = new XMLSerializer();
-      const source     = serializer.serializeToString(svgEl);
-      const blob       = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
-      const url        = URL.createObjectURL(blob);
-      const a          = document.createElement('a');
-      a.href           = url;
-      const name       = codeIn.value.trim() || 'barcode';
-      a.download       = `${name}.svg`;
+      const source = serializer.serializeToString(svgEl);
+      const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const name = codeIn.value.trim() || 'barcode';
+      a.download = `${name}.svg`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     });
 
-    // 스캔 시작
+    // 스캔 시작 이벤트
     scanBtn.addEventListener('click', async () => {
       scanBtn.style.display = 'none';
       stopBtn.style.display = '';
@@ -140,13 +139,13 @@
       requestAnimationFrame(scanFrame);
     });
 
-    // 프레임마다 스캔
+    // 스캔 프레임 처리
     async function scanFrame() {
       try {
         const barcodes = await detector.detect(video);
         if (barcodes.length) {
           const code = barcodes[0].rawValue;
-          codeIn.value     = code;
+          codeIn.value = code;
           scanOutput.value = code;
           drawBarcode(code);
           stopScanning();
