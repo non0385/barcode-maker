@@ -1,5 +1,4 @@
-<!DOCTYPE html>
-<html lang="ko">
+<!DOCTYPE html><html lang="ko">
 <head>
   <meta charset="UTF-8">
   <title>바코드 생성·스캔기</title>
@@ -12,46 +11,52 @@
       padding: 8px;
       display: block;
       margin: 8px auto;
-      width: 100%;
-      max-width: 300px;
+      width: 100%; max-width: 300px;
       box-sizing: border-box;
       text-align: center;
     }
     #barcodeSvg { display: block; margin: 20px auto; width: 100%; }
-    #video { display: block; width: 100%; max-width: 300px; border: 1px solid #ccc; margin: 10px auto; }
+    #video {
+      display: block;       /* 가운데 정렬 */
+      width: 100%; max-width: 300px;
+      border: 1px solid #ccc;
+      margin: 10px auto;
+    }
     hr { margin: 30px 0; }
   </style>
 </head>
 <body>
+  <!-- 바코드 생성기 영역 -->
   <h1 style="text-align:center">바코드 생성기</h1>
+  <label for="productName">상품명 입력:</label>
+  <input id="productName" placeholder="예: 사과">
   <label for="codeInput">바코드 숫자 입력:</label>
   <input id="codeInput" placeholder="예: 123456789012">
-  <button id="generateBtn">생성</button>
+  <button id="downloadBtn">바코드 저장</button>
   <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-  <hr>
-
-  <h1 style="text-align:center">바코드 스캔기</h1>
+  <hr>  <!-- 바코드 스캔기 영역 -->  <h1 style="text-align:center">바코드 스캔기</h1>
   <video id="video" playsinline></video>
   <button id="scanBtn">스캔 시작</button>
   <button id="stopBtn" style="display:none;">스캔 중지</button>
-
-  <!-- ↓ 여기부터 추가: 스캔 결과 표시용 입력칸 -->
   <label for="scanOutput">스캔 결과:</label>
-  <input id="scanOutput" placeholder="여기에 코드가 표시됩니다" readonly>
-  <!-- ↑ 여기까지 추가 -->
-
-  <script>
-    const codeIn     = document.getElementById('codeInput');
-    const genBtn     = document.getElementById('generateBtn');
-    const svgEl      = document.getElementById('barcodeSvg');
-    const video      = document.getElementById('video');
-    const scanBtn    = document.getElementById('scanBtn');
-    const stopBtn    = document.getElementById('stopBtn');
-    const scanOutput = document.getElementById('scanOutput');  // ← 여기 추가
+  <input id="scanOutput" placeholder="여기에 코드가 표시됩니다" readonly>  <script>
+    // 요소 선택
+    const productIn   = document.getElementById('productName');
+    const codeIn      = document.getElementById('codeInput');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const svgEl       = document.getElementById('barcodeSvg');
+    const video       = document.getElementById('video');
+    const scanBtn     = document.getElementById('scanBtn');
+    const stopBtn     = document.getElementById('stopBtn');
+    const scanOutput  = document.getElementById('scanOutput');
     let stream, detector;
 
+    // 바코드 + 상품명 렌더링 함수
     function drawBarcode(code) {
+      // 기존 내용 초기화
       while (svgEl.firstChild) svgEl.removeChild(svgEl.firstChild);
+
+      // 바코드 생성
       JsBarcode(svgEl, code, {
         format: "CODE128",
         width: 2,
@@ -60,29 +65,56 @@
         fontSize: 14,
         textMargin: 5
       });
+
+      // 바코드 크기 측정
       const bb = svgEl.getBBox();
-      svgEl.setAttribute('viewBox', `0 0 ${bb.width} ${bb.height}`);
+      const name = productIn.value.trim();
+      const extra = name ? 20 : 0;
+
+      // 상품명 텍스트 추가
+      if (name) {
+        const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        textEl.textContent = name;
+        textEl.setAttribute('x', bb.width / 2);
+        textEl.setAttribute('y', 14);
+        textEl.setAttribute('text-anchor', 'middle');
+        textEl.setAttribute('font-size', '14');
+        textEl.setAttribute('font-family', 'sans-serif');
+        svgEl.appendChild(textEl);
+      }
+
+      // 뷰박스 조정 (상품명 영역 포함)
+      svgEl.setAttribute('viewBox', `0 ${-extra} ${bb.width} ${bb.height + extra}`);
     }
 
-    // 생성 버튼 & 입력 시 자동 갱신
-    genBtn.addEventListener('click', () => {
-      const code = codeIn.value.trim() || '000000000000';
-      drawBarcode(code);
-    });
+    // 자동 생성
     codeIn.addEventListener('input', () => {
       const code = codeIn.value.trim() || '000000000000';
       drawBarcode(code);
+    });
+
+    // 다운로드 버튼 클릭
+    downloadBtn.addEventListener('click', () => {
+      const serializer = new XMLSerializer();
+      const source     = serializer.serializeToString(svgEl);
+      const blob       = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url        = URL.createObjectURL(blob);
+      const a          = document.createElement('a');
+      a.href           = url;
+      const name       = codeIn.value.trim() || 'barcode';
+      a.download       = `${name}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     });
 
     // 스캔 시작
     scanBtn.addEventListener('click', async () => {
       scanBtn.style.display = 'none';
       stopBtn.style.display = '';
-
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       } catch {
         alert('카메라 권한을 허용해주세요.');
         resetScanButtons();
@@ -90,16 +122,12 @@
       }
       video.srcObject = stream;
       await video.play();
-
       if (!('BarcodeDetector' in window)) {
         alert('이 브라우저는 스캔 기능을 지원하지 않습니다.');
         resetScanButtons();
         return;
       }
-      detector = new BarcodeDetector({
-        formats: ['code_128','ean_13','ean_8','upc_a','upc_e']
-      });
-
+      detector = new BarcodeDetector({ formats: ['code_128','ean_13','ean_8','upc_a','upc_e'] });
       requestAnimationFrame(scanFrame);
     });
 
@@ -110,7 +138,7 @@
         if (barcodes.length) {
           const code = barcodes[0].rawValue;
           codeIn.value     = code;
-          scanOutput.value = code;   // ← 여기 추가: 스캔 결과 입력칸에 값 채우기
+          scanOutput.value = code;
           drawBarcode(code);
           stopScanning();
         } else {
@@ -132,6 +160,5 @@
       stopBtn.style.display = 'none';
     }
     stopBtn.addEventListener('click', stopScanning);
-  </script>
-</body>
+  </script></body>
 </html>
