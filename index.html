@@ -6,7 +6,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <style>
   :root{
-    --max-svg-width: 380px;            /* 초기 화면 표시 상한(px) — JS가 슬라이더에 맞춰 재설정 */
+    --max-svg-width: 380px; /* JS가 슬라이더/화면폭에 맞춰 갱신 */
   }
   body{ font-family:sans-serif; padding:20px; }
   label{ font-weight:bold; margin-top:10px; display:block; text-align:center; }
@@ -20,7 +20,7 @@
   #productText{
     max-width:var(--max-svg-width); margin:4px auto 12px; text-align:center;
     line-height:1.2; overflow-wrap:anywhere; font-weight:600;
-    /* 실제 px 크기는 JS에서 슬라이더 값에 맞춰 세팅 */
+    /* 실제 px 크기는 JS에서 슬라이더 값/화면폭에 맞춰 세팅 */
   }
   #video{ display:block; width:100%; max-width:600px; border:1px solid #ccc; margin:10px auto; }
   hr{ margin:30px 0; }
@@ -37,7 +37,7 @@
 <body>
 <h1 style="text-align:center">
   바코드 생성기<br>
-  <span style="font-size:.7em;font-weight:normal;">(CODE128 / v0.9.4)</span>
+  <span style="font-size:.7em;font-weight:normal;">(CODE128 / v0.9.5)</span>
 </h1>
 
 <!-- 입력 -->
@@ -47,7 +47,7 @@
 <label for="productName">상품명 입력:</label>
 <input id="productName" placeholder="예: 사과">
 
-<!-- 크기 슬라이더 (100% 시작) -->
+<!-- 크기 슬라이더 -->
 <div id="scaleContainer">
   <label for="scaleSlider">바코드 크기: <span id="scaleLabel">100%</span></label>
   <input type="range" id="scaleSlider" min="50" max="150" step="5" value="100">
@@ -92,24 +92,33 @@ const scanOut  = document.getElementById('scanOutput');
 
 let stream, detector;
 
-/* ===== 스케일 캘리브레이션 =====
-   요구: 슬라이더 150%가 '예전 100%'처럼 보이게.
-   내부(실제 렌더) 스케일 = (슬라이더% / 100) / CAL
-*/
-const CAL = 1.5;              // 150%일 때 내부 1.0
-const BASE_CONTAINER = 480;   // 150%일 때 컨테이너 상한(px) — 더 크게 보이도록 상향
+/* ===== 화면 크기 감지 ===== */
+const isSmall = () => window.matchMedia('(max-width: 480px)').matches;
 
-function getVisualScale(){ return parseInt(scaleEl.value,10) / 100; }       // 0.5~1.5
-function getInternalScale(){ return getVisualScale() / CAL; }               // 0.333~1.0
+/* ===== 스케일 보정 =====
+   - PC: CAL=1.5 (슬라이더 150% ≈ 내부 1.0)
+   - 모바일: CAL=1.2 (더 크게 보이도록 완화)
+*/
+const CAL_DESKTOP = 1.5;
+const CAL_MOBILE  = 1.2;
+const BASE_CONTAINER = 480; // 150%에서 컨테이너 상한 목표(px)
+
+function getCal(){ return isSmall() ? CAL_MOBILE : CAL_DESKTOP; }
+function getVisualScale(){ return parseInt(scaleEl.value,10) / 100; } // 0.5~1.5
+function getInternalScale(){ return getVisualScale() / getCal(); }    // (모바일이 더 큼)
 
 /* ===== 렌더 ===== */
 function drawBarcode(code){
   svgEl.innerHTML = '';
-  const SCALE = getInternalScale();              // JsBarcode에 쓰는 내부 스케일
+  const SCALE = getInternalScale();
 
-  const barW   = Math.max(1, 2 * SCALE);        // 막대 폭(px)
-  const barH   = Math.max(24, 60 * SCALE);      // 막대 높이(px) — 너무 작지 않게 하한
-  const fontPx = Math.max(10, Math.round(16 * SCALE)); // 바코드 숫자 폰트
+  const barWBase   = 2;
+  const barHBase   = isSmall() ? 70 : 60;                // 모바일은 기본 높이 ↑
+  const fontBase   = isSmall() ? 18 : 16;                // 모바일은 숫자 글꼴 ↑
+
+  const barW   = Math.max(1, barWBase * SCALE);
+  const barH   = Math.max(24, barHBase * SCALE);
+  const fontPx = Math.max(10, Math.round(fontBase * SCALE));
 
   JsBarcode(svgEl, code || '000000000000', {
     format: 'CODE128',
@@ -122,17 +131,21 @@ function drawBarcode(code){
 }
 
 function updateName(){
-  const vis = getVisualScale();                         // 사용자 체감 스케일(0.5~1.5)
-  const BASE_NAME_PX = 22;                              // 150%일 때 기준 글씨 크기
-  const namePx = Math.round(BASE_NAME_PX * (vis / 1.5)); // 100%≈14~15px, 150%≈22px
+  const vis = getVisualScale();
+  const cal = getCal();
+  const baseNamePx = isSmall() ? 26 : 22;                // 모바일 글꼴 기본값 ↑
+  const namePx = Math.round(baseNamePx * (vis / cal));
   nameEl.style.fontSize = namePx + 'px';
   nameEl.textContent = nameIn.value.trim();
 }
 
-/* 컨테이너 폭도 함께 스케일 → 화면에서 확실히 커졌다/작아짐 */
+/* 컨테이너 폭: 화면 94%를 넘지 않도록 클램프 */
 function updateContainerWidth(){
   const vis = getVisualScale();
-  const px = Math.round(BASE_CONTAINER * (vis / 1.5));
+  const cal = getCal();
+  const target = Math.round(BASE_CONTAINER * (vis / cal));    // 의도 폭
+  const vwLimit = Math.floor(window.innerWidth * 0.94);       // 화면 94%
+  const px = Math.min(target, vwLimit);
   document.documentElement.style.setProperty('--max-svg-width', px + 'px');
 }
 
@@ -148,16 +161,22 @@ scaleEl.addEventListener('input', ()=>{
   refresh();
 });
 resetBtn.addEventListener('click', ()=>{
-  scaleEl.value = 100;
-  scaleLab.textContent = '100%';
+  scaleEl.value = isSmall() ? 130 : 100; // 모바일은 130%를 기본으로
+  scaleLab.textContent = scaleEl.value + '%';
   refresh();
 });
 
 codeIn.addEventListener('input', refresh);
 nameIn.addEventListener('input', refresh);
+window.addEventListener('resize', refresh);
 
-/* 초기 렌더(100%) */
-scaleLab.textContent = scaleEl.value + '%';
+/* ===== 초기값: 모바일이면 130%로 시작 (더 크게) ===== */
+if(isSmall()){
+  scaleEl.value = 130;
+  scaleLab.textContent = '130%';
+}else{
+  scaleLab.textContent = scaleEl.value + '%'; // 100%
+}
 refresh();
 
 /* ===== 저장 ===== */
@@ -180,13 +199,15 @@ dlPngBtn.addEventListener('click', ()=>{
   img.onload = ()=>{
     const name = nameIn.value.trim();
     const vis  = getVisualScale();
-    const namePx = Math.round(22 * (vis / 1.5));     // 화면과 동일 규칙
+    const cal  = getCal();
+    const namePx = Math.round((isSmall()?26:22) * (vis / cal)); // 화면과 동일 규칙
+
     // 2x 캔버스로 선명도 확보
     const padding = 12;
     const c = document.createElement('canvas');
     const ctx = c.getContext('2d');
 
-    // 텍스트 폭 측정 (2배 폰트로 측정해 2x 캔버스와 일치)
+    // 텍스트 폭(2배 폰트로 측정)
     ctx.font = `${namePx*2}px sans-serif`;
     const textW = name ? ctx.measureText(name).width : 0;
 
