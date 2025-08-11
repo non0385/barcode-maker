@@ -6,7 +6,7 @@
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
   <style>
     :root{
-      --max-svg-width: 380px; /* 화면 표시 상한 (원하면 340~420px 사이로 조절) */
+      --max-svg-width: 420px; /* 화면 표시 상한 (원하면 340~420px 사이로 조절) */
     }
     body { font-family: sans-serif; padding: 20px; }
     label { font-weight: bold; margin-top: 10px; display: block; text-align: center; }
@@ -91,7 +91,7 @@
 
   /* ===== 설정 ===== */
   let SCALE = parseInt(scaleSlider.value, 10) / 100; // 0.5~1.5
-  const GAP   = 6; // 바코드 숫자와 상품명 사이 여백(px). 더 붙이고 싶으면 0~2로.
+  const GAP   = 2; // 바코드 숫자와 상품명 사이 여백(px). 더 붙이고 싶으면 0~2로.
   const MIN_FONT = 8; // 숫자/상품명 글꼴 최소 px (가독성 보호)
 
   /* ===== 유틸 ===== */
@@ -290,3 +290,4 @@
 </script>
 </body>
 </html>
+
