@@ -1,216 +1,265 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
 <title>바코드 생성·스캔기</title>
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 <style>
-  :root {
-    --max-svg-width: 380px; /* 초기 최대 폭(px) */
+  :root{
+    --max-svg-width: 380px;            /* 초기 화면 표시 상한(px) — JS가 슬라이더에 맞춰 재설정 */
   }
-  body {
-    font-family: sans-serif;
-    padding: 20px;
+  body{ font-family:sans-serif; padding:20px; }
+  label{ font-weight:bold; margin-top:10px; display:block; text-align:center; }
+  input,button{
+    font-size:1rem; padding:8px; display:block; margin:8px auto;
+    width:100%; max-width:320px; box-sizing:border-box; text-align:center;
   }
-  label {
-    font-weight: bold;
-    margin-top: 10px;
-    display: block;
-    text-align: center;
+  #barcodeSvg{
+    display:block; margin:10px auto; width:100%; max-width:var(--max-svg-width);
   }
-  input, button {
-    font-size: 1rem;
-    padding: 8px;
-    display: block;
-    margin: 8px auto;
-    width: 100%;
-    max-width: 300px;
-    box-sizing: border-box;
-    text-align: center;
+  #productText{
+    max-width:var(--max-svg-width); margin:4px auto 12px; text-align:center;
+    line-height:1.2; overflow-wrap:anywhere; font-weight:600;
+    /* 실제 px 크기는 JS에서 슬라이더 값에 맞춰 세팅 */
   }
-  #barcodeSvg {
-    display: block;
-    margin: 10px auto;
-    width: 100%;
-    max-width: var(--max-svg-width);
-  }
-  #productText {
-    max-width: var(--max-svg-width);
-    margin: 4px auto 12px;
-    text-align: center;
-    font-size: clamp(16px, 4vw, 28px);
-    font-weight: bold;
-    line-height: 1.2;
-    overflow-wrap: anywhere;
-  }
-  #video {
-    display: block;
-    width: 100%;
-    max-width: 600px;
-    border: 1px solid #ccc;
-    margin: 10px auto;
-  }
-  hr {
-    margin: 30px 0;
-  }
-  #scaleContainer {
-    text-align: center;
-    margin: 10px auto;
-    max-width: 300px;
+  #video{ display:block; width:100%; max-width:600px; border:1px solid #ccc; margin:10px auto; }
+  hr{ margin:30px 0; }
+  #scaleContainer{ text-align:center; margin:10px auto; max-width:360px; }
+
+  /* 다크모드 */
+  @media (prefers-color-scheme: dark){
+    body{ background:#111; color:#eee; }
+    #video{ border-color:#444; }
+    input,button{ background:#1a1a1a; color:#eee; border:1px solid #333; }
   }
 </style>
 </head>
 <body>
 <h1 style="text-align:center">
   바코드 생성기<br>
-  <span style="font-size:.7em;font-weight:normal;">(CODE128 / v0.9.3)</span>
+  <span style="font-size:.7em;font-weight:normal;">(CODE128 / v0.9.4)</span>
 </h1>
 
 <!-- 입력 -->
 <label for="codeInput">바코드 숫자 입력:</label>
-<input id="codeInput" placeholder="예: 123456789012">
+<input id="codeInput" inputmode="numeric" pattern="\d*" placeholder="예: 123456789012">
 
 <label for="productName">상품명 입력:</label>
 <input id="productName" placeholder="예: 사과">
 
-<!-- 크기 조절 슬라이더 -->
+<!-- 크기 슬라이더 (100% 시작) -->
 <div id="scaleContainer">
   <label for="scaleSlider">바코드 크기: <span id="scaleLabel">100%</span></label>
-  <input type="range" id="scaleSlider" min="50" max="150" value="100">
+  <input type="range" id="scaleSlider" min="50" max="150" step="5" value="100">
+  <button id="resetBtn" style="margin-top:6px;">100%로 초기화</button>
 </div>
 
 <!-- 바코드 & 상품명 -->
 <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
 <div id="productText"></div>
 
-<button id="downloadBtn">바코드 저장</button>
+<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+  <button id="downloadSvgBtn">SVG 저장</button>
+  <button id="downloadPngBtn">PNG 저장</button>
+</div>
 
 <hr>
 
 <h1 style="text-align:center">바코드 스캔기</h1>
 <video id="video" playsinline></video>
-<button id="scanBtn">스캔 시작</button>
-<button id="stopBtn" style="display:none;">스캔 중지</button>
+<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+  <button id="scanBtn">스캔 시작</button>
+  <button id="stopBtn" style="display:none;">스캔 중지</button>
+</div>
 <label for="scanOutput">스캔 결과:</label>
 <input id="scanOutput" readonly placeholder="여기에 코드가 표시됩니다">
 
 <script>
-/* DOM 요소 */
-const prodIn = document.getElementById('productName');
-const codeIn = document.getElementById('codeInput');
-const svgEl = document.getElementById('barcodeSvg');
-const dlBtn = document.getElementById('downloadBtn');
-const video = document.getElementById('video');
-const scanBtn = document.getElementById('scanBtn');
-const stopBtn = document.getElementById('stopBtn');
-const scanOut = document.getElementById('scanOutput');
-const scaleSlider = document.getElementById('scaleSlider');
-const scaleLabel = document.getElementById('scaleLabel');
-const productText = document.getElementById('productText');
+/* ===== DOM ===== */
+const codeIn   = document.getElementById('codeInput');
+const nameIn   = document.getElementById('productName');
+const svgEl    = document.getElementById('barcodeSvg');
+const nameEl   = document.getElementById('productText');
+const scaleEl  = document.getElementById('scaleSlider');
+const scaleLab = document.getElementById('scaleLabel');
+const resetBtn = document.getElementById('resetBtn');
+const dlSvgBtn = document.getElementById('downloadSvgBtn');
+const dlPngBtn = document.getElementById('downloadPngBtn');
+const video    = document.getElementById('video');
+const scanBtn  = document.getElementById('scanBtn');
+const stopBtn  = document.getElementById('stopBtn');
+const scanOut  = document.getElementById('scanOutput');
+
 let stream, detector;
 
-/* 초기 크기 */
-let SCALE = parseInt(scaleSlider.value, 10) / 100;
+/* ===== 스케일 캘리브레이션 =====
+   요구: 슬라이더 150%가 '예전 100%'처럼 보이게.
+   내부(실제 렌더) 스케일 = (슬라이더% / 100) / CAL
+*/
+const CAL = 1.5;              // 150%일 때 내부 1.0
+const BASE_CONTAINER = 480;   // 150%일 때 컨테이너 상한(px) — 더 크게 보이도록 상향
 
-/* 바코드 렌더링 */
-function draw(code) {
+function getVisualScale(){ return parseInt(scaleEl.value,10) / 100; }       // 0.5~1.5
+function getInternalScale(){ return getVisualScale() / CAL; }               // 0.333~1.0
+
+/* ===== 렌더 ===== */
+function drawBarcode(code){
   svgEl.innerHTML = '';
-  const name = prodIn.value.trim();
-  productText.textContent = name; // 상품명은 SVG 아래 별도 표시
+  const SCALE = getInternalScale();              // JsBarcode에 쓰는 내부 스케일
 
-  const barWidth = 2 * SCALE;
-  const barHeight = 60 * SCALE;
-  const fontSize = Math.round(14 * SCALE);
+  const barW   = Math.max(1, 2 * SCALE);        // 막대 폭(px)
+  const barH   = Math.max(24, 60 * SCALE);      // 막대 높이(px) — 너무 작지 않게 하한
+  const fontPx = Math.max(10, Math.round(16 * SCALE)); // 바코드 숫자 폰트
 
-  JsBarcode(svgEl, code, {
-    format: "CODE128",
-    width: barWidth,
-    height: barHeight,
+  JsBarcode(svgEl, code || '000000000000', {
+    format: 'CODE128',
+    width: barW,
+    height: barH,
     displayValue: true,
-    fontSize: fontSize,
+    fontSize: fontPx,
     textMargin: 5
   });
 }
 
-/* 입력 즉시 렌더 */
-const refresh = () => draw(codeIn.value.trim() || '000000000000');
-codeIn.addEventListener('input', refresh);
-prodIn.addEventListener('input', refresh);
-refresh();
+function updateName(){
+  const vis = getVisualScale();                         // 사용자 체감 스케일(0.5~1.5)
+  const BASE_NAME_PX = 22;                              // 150%일 때 기준 글씨 크기
+  const namePx = Math.round(BASE_NAME_PX * (vis / 1.5)); // 100%≈14~15px, 150%≈22px
+  nameEl.style.fontSize = namePx + 'px';
+  nameEl.textContent = nameIn.value.trim();
+}
 
-/* 크기 슬라이더 변경 */
-scaleSlider.addEventListener('input', () => {
-  SCALE = parseInt(scaleSlider.value, 10) / 100;
-  scaleLabel.textContent = scaleSlider.value + '%';
-  const base = 380; // px
-  document.documentElement.style.setProperty(
-    '--max-svg-width', Math.round(base * SCALE) + 'px'
-  );
+/* 컨테이너 폭도 함께 스케일 → 화면에서 확실히 커졌다/작아짐 */
+function updateContainerWidth(){
+  const vis = getVisualScale();
+  const px = Math.round(BASE_CONTAINER * (vis / 1.5));
+  document.documentElement.style.setProperty('--max-svg-width', px + 'px');
+}
+
+/* ===== 이벤트 ===== */
+function refresh(){
+  drawBarcode(codeIn.value.trim());
+  updateName();
+  updateContainerWidth();
+}
+
+scaleEl.addEventListener('input', ()=>{
+  scaleLab.textContent = scaleEl.value + '%';
+  refresh();
+});
+resetBtn.addEventListener('click', ()=>{
+  scaleEl.value = 100;
+  scaleLab.textContent = '100%';
   refresh();
 });
 
-/* 다운로드 */
-dlBtn.addEventListener('click', () => {
-  const src = new XMLSerializer().serializeToString(svgEl);
-  const blob = new Blob([src], {type: 'image/svg+xml'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = (codeIn.value.trim() || 'barcode') + '.svg';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+codeIn.addEventListener('input', refresh);
+nameIn.addEventListener('input', refresh);
+
+/* 초기 렌더(100%) */
+scaleLab.textContent = scaleEl.value + '%';
+refresh();
+
+/* ===== 저장 ===== */
+// SVG
+dlSvgBtn.addEventListener('click', ()=>{
+  const src  = new XMLSerializer().serializeToString(svgEl);
+  const blob = new Blob([src], {type:'image/svg+xml'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = (codeIn.value.trim() || 'barcode') + '.svg';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
 });
 
-/* 스캔 */
-scanBtn.addEventListener('click', async () => {
-  scanBtn.style.display = 'none';
-  stopBtn.style.display = '';
-  try {
+// PNG (상품명 포함)
+dlPngBtn.addEventListener('click', ()=>{
+  const xml = new XMLSerializer().serializeToString(svgEl);
+  const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+  const img = new Image();
+  img.onload = ()=>{
+    const name = nameIn.value.trim();
+    const vis  = getVisualScale();
+    const namePx = Math.round(22 * (vis / 1.5));     // 화면과 동일 규칙
+    // 2x 캔버스로 선명도 확보
+    const padding = 12;
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+
+    // 텍스트 폭 측정 (2배 폰트로 측정해 2x 캔버스와 일치)
+    ctx.font = `${namePx*2}px sans-serif`;
+    const textW = name ? ctx.measureText(name).width : 0;
+
+    const outW = Math.max(img.width*2, Math.ceil(textW) + padding*2);
+    const textH = name ? (namePx*2 + 4) : 0;
+    const outH = img.height*2 + (name ? (padding + textH) : 0);
+
+    c.width = outW; c.height = outH;
+
+    // 배경 흰색(투명 PNG 원하면 주석 처리)
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,outW,outH);
+
+    // 바코드 중앙
+    const x = Math.round((outW - img.width*2)/2);
+    ctx.drawImage(img, x, 0, img.width*2, img.height*2);
+
+    // 상품명
+    if(name){
+      ctx.fillStyle = '#000';
+      ctx.font = `${namePx*2}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(name, outW/2, img.height*2 + padding);
+    }
+
+    c.toBlob(b=>{
+      const url = URL.createObjectURL(b);
+      const a  = document.createElement('a');
+      a.href = url; a.download = (codeIn.value.trim() || 'barcode') + '.png';
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+    }, 'image/png');
+  };
+  img.src = dataUrl;
+});
+
+/* ===== 스캔 ===== */
+scanBtn.addEventListener('click', async ()=>{
+  scanBtn.style.display='none'; stopBtn.style.display='';
+  let stream;
+  try{
     stream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode: 'environment', width: {ideal: 1280}, height: {ideal: 720}}
+      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
     });
-  } catch {
-    alert('카메라 권한 허용 필요');
-    reset();
-    return;
+  }catch{
+    alert('카메라 권한 허용 필요'); resetScan(); return;
   }
-  video.srcObject = stream;
-  await video.play();
-  if (!('BarcodeDetector' in window)) {
-    alert('스캔 미지원');
-    reset();
-    return;
-  }
-  detector = new BarcodeDetector({formats: ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e']});
+  window._scanStream = stream;
+  video.srcObject = stream; await video.play();
+  if(!('BarcodeDetector' in window)){ alert('스캔 미지원'); resetScan(); return; }
+  detector = new BarcodeDetector({ formats:['code_128','ean_13','ean_8','upc_a','upc_e'] });
   requestAnimationFrame(scanFrame);
 });
-async function scanFrame() {
-  try {
+async function scanFrame(){
+  try{
     const r = await detector.detect(video);
-    if (r.length) {
+    if(r.length){
       const v = r[0].rawValue;
       codeIn.value = scanOut.value = v;
       refresh();
-      stop();
-    } else {
+      stopScan();
+    }else{
       requestAnimationFrame(scanFrame);
     }
-  } catch (e) {
-    console.error(e);
-    stop();
-  }
+  }catch(e){ console.error(e); stopScan(); }
 }
-function stop() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
-  reset();
+function stopScan(){
+  if(window._scanStream) window._scanStream.getTracks().forEach(t=>t.stop());
+  resetScan();
 }
-function reset() {
-  scanBtn.style.display = '';
-  stopBtn.style.display = 'none';
-}
-stopBtn.addEventListener('click', stop);
+function resetScan(){ scanBtn.style.display=''; stopBtn.style.display='none'; }
+stopBtn.addEventListener('click', stopScan);
 </script>
 </body>
 </html>
