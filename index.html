@@ -1,165 +1,292 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<title>바코드 생성·스캔기</title>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-<style>
-  body{font-family:sans-serif;padding:20px;}
-  label{font-weight:bold;margin-top:10px;display:block;text-align:center;}
-  input,button{font-size:1rem;padding:8px;display:block;margin:8px auto;
-    width:100%;max-width:300px;box-sizing:border-box;text-align:center;}
- #barcodeSvg{
-  display:block;
-  margin:20px auto;
-  width:100%;
-  max-width:360px;   /* ← 이 줄 추가(또는 원하는 값으로) */
-  height:auto;
-}
-  #video{display:block;width:100%;max-width:600px;border:1px solid #ccc;margin:10px auto;}
-  hr{margin:30px 0;}
-</style>
+  <meta charset="UTF-8" />
+  <title>바코드 생성·스캔기</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <style>
+    :root{
+      --max-svg-width: 380px; /* 화면 표시 상한 (원하면 340~420px 사이로 조절) */
+    }
+    body { font-family: sans-serif; padding: 20px; }
+    label { font-weight: bold; margin-top: 10px; display: block; text-align: center; }
+    input, button {
+      font-size: 1rem; padding: 8px; display: block; margin: 8px auto;
+      width: 100%; max-width: 320px; box-sizing: border-box; text-align: center;
+    }
+    #barcodeSvg { display: block; margin: 20px auto; width: 100%; max-width: var(--max-svg-width); }
+    #video { display: block; width: 100%; max-width: 600px; border: 1px solid #ccc; margin: 10px auto; }
+    #scaleSlider { width: 80%; max-width: 420px; margin: 10px auto; display:block; }
+    hr { margin: 30px 0; }
+
+    /* 토스트 */
+    #toast{
+      position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
+      background: rgba(0,0,0,.8); color: #fff; padding: 10px 14px; border-radius: 10px;
+      font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .25s ease;
+    }
+    #toast.show{ opacity: 1; }
+
+    /* 다크모드 */
+    @media (prefers-color-scheme: dark){
+      body{ background:#111; color:#e8e8e8; }
+      #video{ border-color:#444; }
+      input,button{ background:#1a1a1a; color:#e8e8e8; border:1px solid #333; }
+    }
+  </style>
 </head>
 <body>
-<h1 style="text-align:center">
-  바코드 생성기 <span style="font-size:0.7em;font-weight:normal;">(v0.8.6)</span>
-</h1>
+  <h1 style="text-align:center">
+    바코드 생성기 <span style="font-size:.7em;font-weight:normal;">(v0.9)</span>
+  </h1>
 
-<!-- 입력 순서: 숫자 → 상품명 -->
-<label for="codeInput">바코드 숫자 입력:</label>
-<input  id="codeInput"  placeholder="예: 123456789012">
+  <!-- 입력 순서: 숫자 → 상품명 -->
+  <label for="codeInput">바코드 숫자 입력</label>
+  <input id="codeInput" aria-label="바코드 숫자 입력"
+         inputmode="numeric" pattern="\d*" autocomplete="off"
+         placeholder="예: 123456789012" />
 
-<label for="productName">상품명 입력:</label>
-<input  id="productName" placeholder="예: 사과">
+  <label for="productName">상품명 입력</label>
+  <input id="productName" aria-label="상품명 입력" placeholder="예: 사과" />
 
-<button id="downloadBtn">바코드 저장</button>
-<svg   id="barcodeSvg"  xmlns="http://www.w3.org/2000/svg"></svg>
+  <!-- 크기 조절 -->
+  <label for="scaleSlider">바코드 크기: <span id="scaleLabel">80%</span></label>
+  <input type="range" id="scaleSlider" min="50" max="150" step="5" value="80" />
 
-<hr>
+  <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+    <button id="downloadSvgBtn" aria-label="SVG로 저장">SVG 저장</button>
+    <button id="downloadPngBtn" aria-label="PNG로 저장">PNG 저장</button>
+  </div>
 
-<h1 style="text-align:center">바코드 스캔기</h1>
-<video  id="video" playsinline></video>
-<button id="scanBtn">스캔 시작</button>
-<button id="stopBtn" style="display:none;">스캔 중지</button>
-<label for="scanOutput">스캔 결과:</label>
-<input  id="scanOutput" readonly placeholder="여기에 코드가 표시됩니다">
+  <svg id="barcodeSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <hr />
+
+  <h1 style="text-align:center">바코드 스캔기</h1>
+  <video id="video" playsinline></video>
+  <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+    <button id="scanBtn">스캔 시작</button>
+    <button id="stopBtn" style="display:none;">스캔 중지</button>
+  </div>
+  <label for="scanOutput">스캔 결과</label>
+  <input id="scanOutput" readonly placeholder="여기에 코드가 표시됩니다" />
+
+  <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
-/* DOM */
-const prodIn  = document.getElementById('productName');
-const codeIn  = document.getElementById('codeInput');
-const svgEl   = document.getElementById('barcodeSvg');
-const dlBtn   = document.getElementById('downloadBtn');
-const video   = document.getElementById('video');
-const scanBtn = document.getElementById('scanBtn');
-const stopBtn = document.getElementById('stopBtn');
-const scanOut = document.getElementById('scanOutput');
-let stream, detector;
+  /* ===== DOM ===== */
+  const codeIn       = document.getElementById('codeInput');
+  const nameIn       = document.getElementById('productName');
+  const svgEl        = document.getElementById('barcodeSvg');
+  const dlSvgBtn     = document.getElementById('downloadSvgBtn');
+  const dlPngBtn     = document.getElementById('downloadPngBtn');
+  const scaleSlider  = document.getElementById('scaleSlider');
+  const scaleLabel   = document.getElementById('scaleLabel');
+  const video        = document.getElementById('video');
+  const scanBtn      = document.getElementById('scanBtn');
+  const stopBtn      = document.getElementById('stopBtn');
+  const scanOut      = document.getElementById('scanOutput');
+  const toastEl      = document.getElementById('toast');
+  let stream, detector;
 
-/* 크기(80 %) */
-const SCALE = 0.5;
-const BAR_W = 2 * SCALE;               // 1.6 px
-const BAR_H = 60 * SCALE;              // 48 px
-const FONT  = Math.round(14 * SCALE);  // 11 px
-const GAP   = 0;                       // 바코드 숫자와 상품명 사이
+  /* ===== 설정 ===== */
+  let SCALE = parseInt(scaleSlider.value, 10) / 100; // 0.5~1.5
+  const GAP   = 6; // 바코드 숫자와 상품명 사이 여백(px). 더 붙이고 싶으면 0~2로.
+  const MIN_FONT = 8; // 숫자/상품명 글꼴 최소 px (가독성 보호)
 
-/* 바코드 + 상품명(아래) 렌더 */
-function draw(code){
-  svgEl.innerHTML='';
-  const name = prodIn.value.trim();
-  const NS   = 'http://www.w3.org/2000/svg';
-
-  /* 1. 바코드 치수 측정 */
-  const tmp = document.createElementNS(NS,'g');
-  JsBarcode(tmp, code, {format:'CODE128', width:BAR_W, height:BAR_H,
-                        displayValue:true, fontSize:FONT, textMargin:5});
-  svgEl.appendChild(tmp);
-  const bbBar = tmp.getBBox();
-  svgEl.removeChild(tmp);
-
-  /* 2. 상품명 폭 측정 */
-  let txtW=0;
-  if(name){
-    const t=document.createElementNS(NS,'text');
-    t.textContent=name;
-    t.setAttribute('font-size',FONT);
-    t.setAttribute('font-family','sans-serif');
-    svgEl.appendChild(t);
-    txtW=t.getBBox().width;
-    svgEl.removeChild(t);
+  /* ===== 유틸 ===== */
+  function debounce(fn, wait=150){
+    let t; return (...args)=>{ clearTimeout(t); t = setTimeout(()=>fn(...args), wait); };
+  }
+  function showToast(msg, ms=1200){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(()=>toastEl.classList.remove('show'), ms);
   }
 
-  /* 3. 뷰박스 계산 (상품명은 바코드 아래) */
-  const width  = Math.max(txtW, bbBar.width);
-  const yName  = bbBar.height + GAP + FONT/2;       // 상품명 Y
-  const height = yName + FONT/2;                    // 전체 높이
-  svgEl.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  /* ===== 바코드 렌더 =====
+     - 상품명은 '아래' 배치 (겹침 이슈 없음)
+     - SCALE에 따라 폭/높이/폰트 자동 반영
+  */
+  function drawBarcode(code) {
+    svgEl.innerHTML = '';
+    const name = nameIn.value.trim();
+    const NS   = 'http://www.w3.org/2000/svg';
 
-  /* 4. 바코드 (위) */
-  const g=document.createElementNS(NS,'g');
-  g.setAttribute('transform',`translate(${(width-bbBar.width)/2},0)`);
-  JsBarcode(g,code,{format:'CODE128',width:BAR_W,height:BAR_H,
-                    displayValue:true,fontSize:FONT,textMargin:5});
-  svgEl.appendChild(g);
+    const BAR_W = 2 * SCALE;                         // 막대 폭(px)
+    const BAR_H = 60 * SCALE;                        // 막대 높이(px)
+    const FONT  = Math.max(MIN_FONT, Math.round(14 * SCALE)); // 글꼴은 정수/최소 보장
 
-  /* 5. 상품명 (아래) */
-  if(name){
-    const txt=document.createElementNS(NS,'text');
-    txt.textContent=name;
-    txt.setAttribute('x',width/2);
-    txt.setAttribute('y',yName);
-    txt.setAttribute('text-anchor','middle');
-    txt.setAttribute('dominant-baseline','middle');
-    txt.setAttribute('font-size',FONT);
-    txt.setAttribute('font-family','sans-serif');
-    svgEl.appendChild(txt);
+    // 1) 바코드 치수 측정
+    const tmp = document.createElementNS(NS, 'g');
+    JsBarcode(tmp, code || '000000000000', {
+      format: 'CODE128',
+      width: BAR_W,
+      height: BAR_H,
+      displayValue: true,
+      fontSize: FONT,
+      textMargin: 5
+    });
+    svgEl.appendChild(tmp);
+    const bbBar = tmp.getBBox();
+    svgEl.removeChild(tmp);
+
+    // 2) 상품명 치수
+    let txtW = 0, txtH = FONT;
+    if (name) {
+      const t = document.createElementNS(NS, 'text');
+      t.textContent = name;
+      t.setAttribute('font-size', FONT);
+      t.setAttribute('font-family', 'sans-serif');
+      svgEl.appendChild(t);
+      const bb = t.getBBox();
+      txtW = bb.width; txtH = bb.height;
+      svgEl.removeChild(t);
+    }
+
+    // 3) 뷰박스(폭은 더 큰 쪽, 높이는 바코드+간격+텍스트)
+    const width  = Math.max(txtW, bbBar.width);
+    const yName  = bbBar.height + GAP + txtH / 2;     // 상품명 중심 Y
+    const height = yName + txtH / 2;                  // 전체 높이
+    svgEl.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    // 4) 바코드 (위)
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('transform', `translate(${(width - bbBar.width) / 2},0)`);
+    JsBarcode(g, code || '000000000000', {
+      format: 'CODE128',
+      width: BAR_W,
+      height: BAR_H,
+      displayValue: true,
+      fontSize: FONT,
+      textMargin: 5
+    });
+    svgEl.appendChild(g);
+
+    // 5) 상품명 (아래)
+    if (name) {
+      const txt = document.createElementNS(NS, 'text');
+      txt.textContent = name;
+      txt.setAttribute('x', width / 2);
+      txt.setAttribute('y', yName);
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('dominant-baseline', 'middle');
+      txt.setAttribute('font-size', FONT);
+      txt.setAttribute('font-family', 'sans-serif');
+      svgEl.appendChild(txt);
+    }
   }
-}
 
-/* 입력 즉시 렌더 */
-const refresh=()=>draw(codeIn.value.trim()||'000000000000');
-codeIn.addEventListener('input',refresh);
-prodIn.addEventListener('input',refresh);
-refresh();
+  /* ===== 이벤트 ===== */
+  const refresh = ()=> drawBarcode(codeIn.value.trim());
+  const refreshDebounced = debounce(refresh, 120);
 
-/* 다운로드 */
-dlBtn.addEventListener('click',()=>{
-  const src=new XMLSerializer().serializeToString(svgEl);
-  const blob=new Blob([src],{type:'image/svg+xml'});
-  const url =URL.createObjectURL(blob);
-  const a   =document.createElement('a');
-  a.href=url; a.download=(codeIn.value.trim()||'barcode')+'.svg';
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-});
+  codeIn.addEventListener('input', refreshDebounced);
+  nameIn.addEventListener('input', refreshDebounced);
 
-/* 스캔 */
-scanBtn.addEventListener('click',async()=>{
-  scanBtn.style.display='none'; stopBtn.style.display='';
-  try{stream=await navigator.mediaDevices.getUserMedia({
-        video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});}
-  catch{alert('카메라 권한 허용 필요'); reset(); return;}
-  video.srcObject=stream; await video.play();
-  if(!('BarcodeDetector'in window)){alert('스캔 미지원'); reset(); return;}
-  detector=new BarcodeDetector({formats:['code_128','ean_13','ean_8','upc_a','upc_e']});
-  requestAnimationFrame(scanFrame);
-});
-async function scanFrame(){
-  try{
-    const r=await detector.detect(video);
-    if(r.length){const v=r[0].rawValue; codeIn.value=scanOut.value=v; refresh(); stop();}
-    else requestAnimationFrame(scanFrame);
-  }catch(e){console.error(e); stop();}
-}
-function stop(){if(stream)stream.getTracks().forEach(t=>t.stop()); reset();}
-function reset(){scanBtn.style.display=''; stopBtn.style.display='none';}
-stopBtn.addEventListener('click',stop);
+  scaleSlider.addEventListener('input', ()=>{
+    SCALE = parseInt(scaleSlider.value, 10) / 100;
+    scaleLabel.textContent = scaleSlider.value + '%';
+    refresh();
+  });
+
+  // 초기 렌더
+  refresh();
+
+  /* ===== 저장(SVG/PNG) ===== */
+  dlSvgBtn.addEventListener('click', ()=>{
+    const src  = new XMLSerializer().serializeToString(svgEl);
+    const blob = new Blob([src], { type:'image/svg+xml' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = (codeIn.value.trim() || 'barcode') + '.svg';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+
+  dlPngBtn.addEventListener('click', ()=>{
+    const xml = new XMLSerializer().serializeToString(svgEl);
+    const dataUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
+    const img = new Image();
+    img.onload = ()=>{
+      // 2배 캔버스에 그려서 선명도 확보
+      const c = document.createElement('canvas');
+      c.width = img.width * 2; c.height = img.height * 2;
+      const ctx = c.getContext('2d');
+      // 백색 배경 (투명 PNG 원하면 주석 처리)
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0,0,c.width,c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b=>{
+        const url = URL.createObjectURL(b);
+        const a = document.createElement('a');
+        a.href = url; a.download = (codeIn.value.trim() || 'barcode') + '.png';
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+      }, 'image/png');
+    };
+    img.src = dataUrl;
+  });
+
+  /* ===== 스캔 ===== */
+  scanBtn.addEventListener('click', async ()=>{
+    scanBtn.style.display='none'; stopBtn.style.display='';
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+      });
+    }catch{
+      alert('카메라 권한을 허용해주세요.');
+      resetScan(); return;
+    }
+    video.srcObject = stream; await video.play();
+
+    if(!('BarcodeDetector' in window)){
+      alert('이 브라우저는 스캔 기능을 지원하지 않습니다. (Chrome/Edge 권장)');
+      resetScan(); return;
+    }
+    detector = new BarcodeDetector({ formats:['code_128','ean_13','ean_8','upc_a','upc_e'] });
+    requestAnimationFrame(scanFrame);
+  });
+
+  async function scanFrame(){
+    try{
+      const res = await detector.detect(video);
+      if(res.length){
+        const v = res[0].rawValue;
+        codeIn.value = scanOut.value = v;
+        try{ await navigator.clipboard?.writeText(v); }catch{}
+        showToast('스캔 성공: ' + v);
+        refresh();
+        stopScan();
+      }else{
+        requestAnimationFrame(scanFrame);
+      }
+    }catch(e){
+      console.error(e); stopScan();
+    }
+  }
+  function stopScan(){
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    resetScan();
+  }
+  function resetScan(){ scanBtn.style.display=''; stopBtn.style.display='none'; }
+  stopBtn.addEventListener('click', stopScan);
+
+  /* ===== URL 파라미터로 바로 생성 (선택적) =====
+     예: ?code=8801234567890&name=사과&scale=90
+  */
+  (function initFromQuery(){
+    const q = new URLSearchParams(location.search);
+    const codeQ = q.get('code'); const nameQ = q.get('name'); const scaleQ = q.get('scale');
+    if(codeQ){ codeIn.value = codeQ; }
+    if(nameQ){ nameIn.value = nameQ; }
+    if(scaleQ){
+      const v = Math.min(150, Math.max(50, parseInt(scaleQ,10)||80));
+      scaleSlider.value = v; SCALE = v/100; scaleLabel.textContent = v+'%';
+    }
+    refresh();
+  })();
 </script>
 </body>
 </html>
-
-
-
-
-
-
