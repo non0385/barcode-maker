@@ -37,7 +37,7 @@
 <body>
 <h1 style="text-align:center">
   바코드&상품명 생성기<br>
-  <span style="font-size:.7em;font-weight:normal;">(CODE128 / v0.9.8)</span>
+  <span style="font-size:.7em;font-weight:normal;">(CODE128 / v0.9.9)</span>
 </h1>
 
 <!-- 입력 -->
@@ -243,44 +243,117 @@ dlPngBtn.addEventListener('click', ()=>{
   img.src = dataUrl;
 });
 
-/* ===== 스캔 ===== */
-let stream, detector;
-scanBtn.addEventListener('click', async ()=>{
-  scanBtn.style.display='none'; stopBtn.style.display='';
-  try{
-    stream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
-    });
-  }catch{
-    alert('카메라 권한 허용 필요'); resetScan(); return;
+<!-- ===== 스캔(안정화 버전) ===== -->
+<script>
+  // ...위쪽 기존 코드 유지...
+
+  /* 안정화 파라미터 (필요시 숫자만 조절) */
+  const STABLE_N        = 3;      // 같은 값이 연속 몇 프레임 나와야 인정할지 (2~4 권장)
+  const COOLDOWN_MS     = 1200;   // 한 번 성공 후 최소 대기 시간
+  const MIN_AREA_RATIO  = 0.02;   // 바코드 박스가 화면에서 차지하는 최소 비율(2%); 너무 멀면 무시
+  const FRAME_DELAY_MS  = 60;     // 프레임 간 간격(밀도 낮춰 과인식 방지, 60~100ms)
+
+  let rafId = null;
+  let lastVal = '';
+  let stableCount = 0;
+  let lastAcceptTs = 0;
+
+  function resetStability() {
+    lastVal = '';
+    stableCount = 0;
   }
-  window._scanStream = stream;
-  video.srcObject = stream; await video.play();
-  if(!('BarcodeDetector' in window)){ alert('스캔 미지원'); resetScan(); return; }
-  detector = new BarcodeDetector({ formats:['code_128','ean_13','ean_8','upc_a','upc_e'] });
-  requestAnimationFrame(scanFrame);
-});
-async function scanFrame(){
-  try{
-    const r = await detector.detect(video);
-    if(r.length){
-      const v = r[0].rawValue;
-      codeIn.value = scanOut.value = v;
-      refresh();
+
+  function areaOkay(b) {
+    const bb = b?.boundingBox;
+    if (!bb || !video.videoWidth || !video.videoHeight) return true; // 정보 없으면 통과
+    const ratio = (bb.width * bb.height) / (video.videoWidth * video.videoHeight);
+    return ratio >= MIN_AREA_RATIO;
+  }
+
+  async function scanFrame() {
+    try {
+      const res = await detector.detect(video);
+      const now = Date.now();
+
+      if (res && res.length) {
+        const b = res[0];
+        const v = b.rawValue || '';
+
+        // 1) 너무 멀거나 작으면 스킵
+        if (!areaOkay(b)) {
+          // 다음 프레임 예약
+        } else {
+          // 2) 연속 동일값 체크
+          if (v === lastVal) stableCount++;
+          else { lastVal = v; stableCount = 1; }
+
+          // 3) 안정성 + 쿨다운 조건 충족 시 채택
+          if (stableCount >= STABLE_N && (now - lastAcceptTs) >= COOLDOWN_MS) {
+            codeIn.value = scanOut.value = v;
+            refresh();
+            lastAcceptTs = now;
+            stopScan();   // 한 번 읽고 자동 정지 (원하면 계속 유지하도록 바꿔도 됨)
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
       stopScan();
-    }else{
-      requestAnimationFrame(scanFrame);
+      return;
+    } finally {
+      // 다음 프레임 예약(간격 두기)
+      if (video.srcObject) {
+        setTimeout(() => { rafId = requestAnimationFrame(scanFrame); }, FRAME_DELAY_MS);
+      }
     }
-  }catch(e){ console.error(e); stopScan(); }
-}
-function stopScan(){
-  if(window._scanStream) window._scanStream.getTracks().forEach(t=>t.stop());
-  resetScan();
-}
-function resetScan(){ scanBtn.style.display=''; stopBtn.style.display='none'; }
-stopBtn.addEventListener('click', stopScan);
+  }
+
+  // 스캔 시작
+  scanBtn.addEventListener('click', async () => {
+    scanBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    resetStability();
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+    } catch {
+      alert('카메라 권한 허용 필요');
+      resetScan();
+      return;
+    }
+    window._scanStream = stream;
+    video.srcObject = stream;
+    await video.play();
+
+    if (!('BarcodeDetector' in window)) {
+      alert('스캔 미지원(Chrome/Edge 권장)');
+      resetScan();
+      return;
+    }
+    detector = new BarcodeDetector({ formats: ['code_128','ean_13','ean_8','upc_a','upc_e'] });
+    rafId = requestAnimationFrame(scanFrame);
+  });
+
+  function stopScan() {
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    if (window._scanStream) window._scanStream.getTracks().forEach(t => t.stop());
+    resetScan();
+  }
+  function resetScan() {
+    scanBtn.style.display = '';
+    stopBtn.style.display = 'none';
+    resetStability();
+  }
+  stopBtn.addEventListener('click', stopScan);
 </script>
+
 </body>
 </html>
+
 
 
